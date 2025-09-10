@@ -50,12 +50,14 @@ import shutil
 import ffmpeg
 
 # Initialize the bot - Railway compatible (fixes SQLite error)
+# Force use environment variables (no fallbacks to avoid old credentials)
 bot = Client(
     "railway_bot",
-    api_id=int(os.environ.get("API_ID") or API_ID),
-    api_hash=os.environ.get("API_HASH") or API_HASH,
-    bot_token=os.environ.get("BOT_TOKEN") or BOT_TOKEN,
-    in_memory=True  # THIS FIXES THE SQLITE ERROR ON RAILWAY
+    api_id=int(os.environ.get("API_ID")),
+    api_hash=os.environ.get("API_HASH"),
+    bot_token=os.environ.get("BOT_TOKEN"),
+    in_memory=True,  # THIS FIXES THE SQLITE ERROR ON RAILWAY
+    ipv6=False  # Force IPv4 for better Render/Railway compatibility
 )
 
 # Add Flask web server for Render compatibility with live progress tracking
@@ -840,46 +842,28 @@ if __name__ == "__main__":
     print("🤖 Starting Telegram bot...")
     
     try:
-        import signal
-        import asyncio
-        
-        def timeout_handler(signum, frame):
-            print("⏰ Bot startup timeout - likely FloodWait blocking")
-            raise TimeoutError("Bot connection timeout")
-        
-        # Set timeout for bot connection attempt
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(10)  # 10 second timeout
-        
-        print("🔗 Attempting bot connection...")
+        print("🔗 Connecting to Telegram (IPv4 only for Render compatibility)...")
         bot.run()
-        
-    except TimeoutError:
-        print("⏳ Bot connection timed out - FloodWait blocking detected")
-        print("🌐 Flask server continues running for Render deployment")
-        print("🔄 Bot will retry automatically when Render restarts")
         
     except Exception as e:
         print(f"❌ Bot startup failed: {e}")
+        print(f"❌ Error type: {type(e)}")
         
         # Check if it's FloodWait
         if "FloodWait" in str(type(e)) or "FLOOD_WAIT" in str(e):
             wait_time = getattr(e, 'value', getattr(e, 'x', 1968))
             print(f"⏳ FloodWait detected: {wait_time} seconds ({wait_time//60:.1f} minutes)")
             print("🌐 Flask server will continue running for Render")
-            print("🔄 Render will automatically restart the bot when ready")
+            print("🔄 Bot will retry automatically when process restarts")
         else:
-            print(f"❌ Other error: {e}")
+            print(f"❌ Connection error: {e}")
             print("🌐 Flask server continues for Render port detection")
-    
-    finally:
-        signal.alarm(0)  # Clear the alarm
         
-    # Keep Flask running for Render - this prevents "No open ports" error
-    print("🌐 Maintaining Flask server for Render deployment...")
-    try:
-        while True:
-            print(f"🌐 Flask server active - Bot will retry on next restart")
-            time.sleep(300)  # Status update every 5 minutes
-    except KeyboardInterrupt:
-        print("👋 Shutting down gracefully...")
+        # Keep Flask running for Render - this prevents "No open ports" error  
+        print("🌐 Maintaining Flask server for Render deployment...")
+        try:
+            while True:
+                print(f"🌐 Flask server active - Bot will retry on next restart")
+                time.sleep(300)  # Status update every 5 minutes
+        except KeyboardInterrupt:
+            print("👋 Shutting down gracefully...")
