@@ -1,0 +1,22 @@
+[project]
+name = "repl-nix-workspace"
+version = "0.1.0"
+description = "Railway-optimized Telegram bot"
+requires-python = ">=3.11"
+dependencies = [
+    "pyrogram==2.0.106",
+    "requests==2.31.0",
+    "yt-dlp",
+    "aiofiles",
+    "aiohttp",
+    "beautifulsoup4",
+    "flask",
+    "pycryptodome",
+    "cloudscraper",
+    "m3u8",
+    "pytz",
+    "tgcrypto",
+    "pytube",
+    "ffmpeg-python",
+    "pyromod"
+]
