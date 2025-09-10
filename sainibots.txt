@@ -50,3 +50,4 @@ google-auth-httplib2
 google-api-python-client
 ffmpeg-python
 psutil==5.9.5
+aria2p
