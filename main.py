@@ -58,6 +58,41 @@ bot = Client(
     in_memory=True  # THIS FIXES THE SQLITE ERROR ON RAILWAY
 )
 
+# Add Flask web server for Render compatibility
+from flask import Flask
+from threading import Thread
+import threading
+
+web_app = Flask(__name__)
+
+@web_app.route('/')
+def home():
+    return {
+        'status': 'Bot is running', 
+        'message': 'SAINI DRM Bot Active',
+        'features': ['YouTube Downloads', 'DRM Processing', 'Text to File conversion'],
+        'health_check': '/health'
+    }
+
+@web_app.route('/health')
+def health():
+    return {'status': 'healthy', 'bot_active': True, 'timestamp': time.time()}
+
+@web_app.route('/status')
+def status():
+    return {
+        'bot_name': 'SAINI DRM Bot',
+        'status': 'running',
+        'total_users': len(TOTAL_USERS),
+        'auth_users': len(AUTH_USERS),
+        'uptime': time.time()
+    }
+
+def run_web_server():
+    """Run Flask server in separate thread for Render compatibility"""
+    port = int(os.environ.get("PORT", 10000))
+    web_app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
+
 # Advanced Railway monitoring and optimization functions
 import random
 
@@ -581,11 +616,19 @@ def startup_network_test_sync():
         print(f"⚠️ Network test failed: {e}")
 
 if __name__ == "__main__":
-    print("🚂 Railway Bot Starting - Enhanced Monitoring Enabled...")
+    print("🚂 SAINI DRM Bot Starting with Render Port Support...")
     
-    # Test network performance (synchronous to avoid event loop conflicts)
+    # Test network performance (synchronous to avoid event loop conflicts)  
     startup_network_test_sync()
     
+    # Start web server in background thread for Render compatibility
+    print(f"🌐 Starting web server on port {os.environ.get('PORT', 10000)}...")
+    web_thread = Thread(target=run_web_server, daemon=True)
+    web_thread.start()
+    print("✅ Web server started successfully")
+    
     reset_and_set_commands()
-    notify_owner() 
+    notify_owner()
+    
+    print("🤖 Starting Telegram bot...")
     bot.run()
