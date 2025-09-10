@@ -58,25 +58,120 @@ bot = Client(
     in_memory=True  # THIS FIXES THE SQLITE ERROR ON RAILWAY
 )
 
-# Add Flask web server for Render compatibility
-from flask import Flask
+# Add Flask web server for Render compatibility with live progress tracking
+from flask import Flask, jsonify, render_template_string
 from threading import Thread
 import threading
+import json
+from datetime import datetime
 
 web_app = Flask(__name__)
 
+# Global progress tracking for live updates
+progress_data = {
+    'current_downloads': {},
+    'completed_downloads': [],
+    'stats': {
+        'total_files_processed': 0,
+        'active_downloads': 0,
+        'last_activity': None
+    }
+}
+
 @web_app.route('/')
 def home():
-    return {
-        'status': 'Bot is running', 
-        'message': 'SAINI DRM Bot Active',
-        'features': ['YouTube Downloads', 'DRM Processing', 'Text to File conversion'],
-        'health_check': '/health'
-    }
+    return render_template_string('''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SAINI DRM Bot - Live Progress</title>
+    <meta http-equiv="refresh" content="5">
+    <style>
+        body { font-family: Arial, sans-serif; background: #1a1a1a; color: #fff; margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { text-align: center; padding: 20px; background: #2d2d2d; border-radius: 10px; margin-bottom: 20px; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .stat-card { background: #2d2d2d; padding: 15px; border-radius: 8px; text-align: center; }
+        .stat-number { font-size: 2em; font-weight: bold; color: #00d4aa; }
+        .downloads { background: #2d2d2d; padding: 20px; border-radius: 10px; }
+        .download-item { background: #1a1a1a; margin: 10px 0; padding: 15px; border-radius: 5px; border-left: 4px solid #00d4aa; }
+        .progress-bar { background: #333; height: 20px; border-radius: 10px; overflow: hidden; margin: 10px 0; }
+        .progress-fill { background: linear-gradient(90deg, #00d4aa, #00b894); height: 100%; transition: width 0.3s ease; }
+        .status-active { color: #00d4aa; }
+        .status-completed { color: #00b894; }
+        .status-error { color: #e17055; }
+        .log-entry { font-family: monospace; padding: 5px; margin: 2px 0; background: #111; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚂 SAINI DRM Bot</h1>
+            <p>Live Progress Monitoring on Render</p>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.active_downloads }}</div>
+                <div>Active Downloads</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.total_files_processed }}</div>
+                <div>Total Processed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ total_users }}</div>
+                <div>Total Users</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ auth_users }}</div>
+                <div>Premium Users</div>
+            </div>
+        </div>
+        
+        <div class="downloads">
+            <h2>📥 Current Downloads</h2>
+            {% if current_downloads %}
+                {% for id, download in current_downloads.items() %}
+                <div class="download-item">
+                    <div><strong>{{ download.filename }}</strong></div>
+                    <div>User: {{ download.user_id }} | Started: {{ download.start_time }}</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {{ download.progress }}%"></div>
+                    </div>
+                    <div>{{ download.progress }}% - {{ download.status }}</div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p>No active downloads</p>
+            {% endif %}
+            
+            <h2>✅ Recent Completed Downloads</h2>
+            {% for download in completed_downloads[-5:] %}
+            <div class="download-item">
+                <div><strong>{{ download.filename }}</strong></div>
+                <div class="status-completed">✅ Completed in {{ download.duration }}s</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+</html>
+    ''', 
+    current_downloads=progress_data['current_downloads'],
+    completed_downloads=progress_data['completed_downloads'],
+    stats=progress_data['stats'],
+    total_users=len(TOTAL_USERS),
+    auth_users=len(AUTH_USERS)
+    )
 
 @web_app.route('/health')
 def health():
     return {'status': 'healthy', 'bot_active': True, 'timestamp': time.time()}
+
+@web_app.route('/api/progress')
+def api_progress():
+    return jsonify(progress_data)
 
 @web_app.route('/status')
 def status():
@@ -85,13 +180,49 @@ def status():
         'status': 'running',
         'total_users': len(TOTAL_USERS),
         'auth_users': len(AUTH_USERS),
-        'uptime': time.time()
+        'uptime': time.time(),
+        'active_downloads': progress_data['stats']['active_downloads'],
+        'total_processed': progress_data['stats']['total_files_processed']
     }
+
+def update_download_progress(download_id, filename, user_id, progress=0, status="Starting", completed=False):
+    """Update download progress for live tracking"""
+    current_time = datetime.now().strftime("%H:%M:%S")
+    
+    if completed:
+        if download_id in progress_data['current_downloads']:
+            download_info = progress_data['current_downloads'][download_id]
+            download_info['duration'] = time.time() - download_info['start_timestamp']
+            progress_data['completed_downloads'].append(download_info)
+            del progress_data['current_downloads'][download_id]
+            progress_data['stats']['active_downloads'] -= 1
+            progress_data['stats']['total_files_processed'] += 1
+        print(f"🎉 RENDER LIVE: Download completed - {filename} for user {user_id}")
+    else:
+        if download_id not in progress_data['current_downloads']:
+            progress_data['stats']['active_downloads'] += 1
+            
+        progress_data['current_downloads'][download_id] = {
+            'filename': filename,
+            'user_id': user_id,
+            'progress': progress,
+            'status': status,
+            'start_time': current_time,
+            'start_timestamp': time.time()
+        }
+        print(f"📥 RENDER LIVE: {filename} - {progress}% - {status} (User: {user_id})")
+    
+    progress_data['stats']['last_activity'] = current_time
 
 def run_web_server():
     """Run Flask server in separate thread for Render compatibility"""
     port = int(os.environ.get("PORT", 10000))
-    web_app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
+    print(f"🌐 Flask server starting on 0.0.0.0:{port}")
+    try:
+        web_app.run(host="0.0.0.0", port=port, debug=False, threaded=True, use_reloader=False)
+    except Exception as e:
+        print(f"❌ Flask server failed to start: {e}")
+        raise
 
 # Advanced Railway monitoring and optimization functions
 import random
@@ -141,16 +272,24 @@ async def download_with_retry(cmd, max_retries=3):
     raise Exception("All download attempts failed")
 
 async def process_video_railway_optimized(video_url, message):
-    """Enhanced Railway processing with real-time speed monitoring"""
+    """Enhanced Railway processing with real-time speed monitoring and live progress tracking"""
     import tempfile
     import time
+    import re
     
     start_time = time.time()
+    user_id = message.from_user.id
+    download_id = f"{user_id}_{int(time.time())}"
+    filename = f"video_{int(time.time())}.mp4"
+    
+    # Initialize live progress tracking
+    update_download_progress(download_id, filename, user_id, 0, "🚂 Starting video download...")
+    
     status_msg = await message.reply_text("🚂 **Railway Download Starting...**")
     
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
-            temp_file = os.path.join(temp_dir, f"video_{int(time.time())}.mp4")
+            temp_file = os.path.join(temp_dir, filename)
             
             # Monitor download progress with enhanced parameters
             cmd = [
@@ -169,12 +308,22 @@ async def process_video_railway_optimized(video_url, message):
             
             last_update = time.time()
             last_progress = ""
+            current_percent = 0
             
             if process.stdout:
                 for line in iter(process.stdout.readline, ''):
                     if '[download]' in line and '%' in line:
+                        # Parse percentage from yt-dlp output
+                        percent_match = re.search(r'(\d+(?:\.\d+)?)%', line)
+                        if percent_match:
+                            current_percent = float(percent_match.group(1))
+                        
                         # Parse speed from yt-dlp output
                         current_progress = line.strip()
+                        
+                        # Update live progress tracking
+                        update_download_progress(download_id, filename, user_id, current_percent, f"Downloading... {current_percent:.1f}%")
+                        
                         if time.time() - last_update > 5 and current_progress != last_progress:  # Update every 5 seconds
                             try:
                                 await status_msg.edit_text(f"🚂 **Railway Download**\n\n{current_progress}")
@@ -190,6 +339,9 @@ async def process_video_railway_optimized(video_url, message):
                 download_time = time.time() - start_time
                 speed_mbps = (file_size / (1024*1024)) / download_time
                 
+                # Update completion status
+                update_download_progress(download_id, filename, user_id, 100, f"✅ Completed ({file_size / (1024*1024):.1f}MB)", completed=True)
+                
                 await message.reply_video(
                     video=temp_file,
                     caption=f"🚂 **Railway Downloaded**\n\n"
@@ -201,9 +353,11 @@ async def process_video_railway_optimized(video_url, message):
                 
                 await status_msg.delete()
             else:
+                update_download_progress(download_id, filename, user_id, 0, "❌ Download failed", completed=True)
                 await status_msg.edit_text("❌ **Download failed - no file generated**")
                 
     except Exception as e:
+        update_download_progress(download_id, filename, user_id, 0, f"❌ Error: {str(e)}", completed=True)
         await status_msg.edit_text(f"❌ **Download failed**: {str(e)}")
 
 # Legacy function maintained for compatibility
@@ -618,17 +772,34 @@ def startup_network_test_sync():
 if __name__ == "__main__":
     print("🚂 SAINI DRM Bot Starting with Render Port Support...")
     
-    # Test network performance (synchronous to avoid event loop conflicts)  
-    startup_network_test_sync()
-    
-    # Start web server in background thread for Render compatibility
-    print(f"🌐 Starting web server on port {os.environ.get('PORT', 10000)}...")
+    # Start web server FIRST for immediate port detection
+    port = int(os.environ.get('PORT', 10000))
+    print(f"🌐 Starting Flask server on port {port} (Render requirement)...")
     web_thread = Thread(target=run_web_server, daemon=True)
     web_thread.start()
-    print("✅ Web server started successfully")
     
-    reset_and_set_commands()
-    notify_owner()
+    # Give Flask server time to bind to port
+    import time
+    time.sleep(2)
+    
+    # Test if server is responding
+    try:
+        import requests
+        response = requests.get(f"http://127.0.0.1:{port}/health", timeout=5)
+        if response.status_code == 200:
+            print("✅ Flask server is responding - Render should detect port")
+        else:
+            print(f"⚠️ Flask server responding with status {response.status_code}")
+    except Exception as e:
+        print(f"⚠️ Flask server health check failed: {e}")
+    
+    # Run other startup tasks (non-blocking for port detection)
+    try:
+        startup_network_test_sync()
+        reset_and_set_commands()
+        notify_owner()
+    except Exception as e:
+        print(f"⚠️ Startup task failed: {e}")
     
     print("🤖 Starting Telegram bot...")
     bot.run()
