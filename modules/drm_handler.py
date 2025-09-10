@@ -73,25 +73,66 @@ async def drm_handler(bot: Client, m: Message):
 
     user_id = m.from_user.id
     if m.document and m.document.file_name.endswith('.txt'):
-        # Ensure downloads directory exists
-        downloads_dir = "./downloads"
-        os.makedirs(downloads_dir, exist_ok=True)
-        
-        x = await m.download(file_name=f"{downloads_dir}/{m.document.file_name}")
         try:
-            await bot.send_document(OWNER, x)
-        except (PeerIdInvalid, UserIsBlocked, InputUserDeactivated):
-            # Owner hasn't interacted with the bot yet, skip sending to owner
-            logging.warning(f"Cannot send document to owner (ID: {OWNER}) - peer not found or blocked. Owner needs to start the bot first.")
+            # Ensure downloads directory exists with better error handling
+            downloads_dir = os.path.abspath("./downloads")
+            os.makedirs(downloads_dir, exist_ok=True)
+            
+            # Sanitize filename to prevent path issues
+            safe_filename = "".join(c for c in m.document.file_name if c.isalnum() or c in (' ', '-', '_', '.')).rstrip()
+            if not safe_filename:
+                safe_filename = f"file_{int(time.time())}.txt"
+                
+            file_path = os.path.join(downloads_dir, safe_filename)
+            
+            # Download with better error handling and live progress tracking
+            download_id = f"{user_id}_{int(time.time())}"
+            from main import update_download_progress
+            
+            update_download_progress(download_id, safe_filename, user_id, 0, "Downloading text file...")
+            
+            x = await m.download(file_name=file_path)
+            
+            if not x or not os.path.exists(x):
+                update_download_progress(download_id, safe_filename, user_id, 0, "❌ Download failed", completed=True)
+                await bot.send_message(m.chat.id, "❌ **Failed to download file**")
+                return
+                
+            update_download_progress(download_id, safe_filename, user_id, 100, "✅ Downloaded successfully", completed=True)
+                
+            try:
+                await bot.send_document(OWNER, x)
+            except (PeerIdInvalid, UserIsBlocked, InputUserDeactivated):
+                # Owner hasn't interacted with the bot yet, skip sending to owner
+                logging.warning(f"Cannot send document to owner (ID: {OWNER}) - peer not found or blocked. Owner needs to start the bot first.")
+            except Exception as e:
+                logging.warning(f"Failed to send document to owner: {e}")
+            
+            await m.delete(True)
+            file_name, ext = os.path.splitext(os.path.basename(x))  # Extract filename & extension
+            path = f"./downloads/{m.chat.id}"
+            
+            # Read file with better error handling
+            try:
+                with open(x, "r", encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                lines = content.split("\n")
+                
+                # Clean up downloaded file
+                if os.path.exists(x):
+                    os.remove(x)
+                    
+            except Exception as e:
+                logging.error(f"Failed to read downloaded file: {e}")
+                if os.path.exists(x):
+                    os.remove(x)
+                await bot.send_message(m.chat.id, "❌ **Failed to process text file**")
+                return
+                
         except Exception as e:
-            logging.warning(f"Failed to send document to owner: {e}")
-        await m.delete(True)
-        file_name, ext = os.path.splitext(os.path.basename(x))  # Extract filename & extension
-        path = f"./downloads/{m.chat.id}"
-        with open(x, "r") as f:
-            content = f.read()
-        lines = content.split("\n")
-        os.remove(x)
+            logging.error(f"File download failed: {e}")
+            await bot.send_message(m.chat.id, f"❌ **Download failed**: {str(e)}")
+            return
     elif m.text and "://" in m.text:
         lines = [m.text]
     else:
