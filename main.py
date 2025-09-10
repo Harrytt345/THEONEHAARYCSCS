@@ -17,7 +17,7 @@ import cloudscraper
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 from base64 import b64encode, b64decode
-from modules.logs import logging
+import logging
 from bs4 import BeautifulSoup
 from modules import saini as helper
 from modules.html_handler import html_handler
