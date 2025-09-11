@@ -27,6 +27,7 @@ from modules.authorisation import add_auth_user, list_auth_users, remove_auth_us
 from modules.broadcast import broadcast_handler, broadusers_handler
 from modules.text_handler import text_to_txt
 from modules.youtube_handler import ytm_handler, y2t_handler, getcookies_handler, cookies_handler
+from modules.ultra_fast_downloader import ultra_fast_youtube_download
 from modules.utils import progress_bar
 from vars import api_url, api_token, token_cp, adda_token, photologo, photoyt, photocp, photozip
 from vars import API_ID, API_HASH, BOT_TOKEN, OWNER, CREDIT, AUTH_USERS, TOTAL_USERS, cookies_file_path
@@ -53,9 +54,9 @@ import ffmpeg
 # Force use environment variables (no fallbacks to avoid old credentials)
 bot = Client(
     "railway_bot",
-    api_id=int(os.environ.get("API_ID")),
-    api_hash=os.environ.get("API_HASH"),
-    bot_token=os.environ.get("BOT_TOKEN"),
+    api_id=int(os.environ.get("API_ID", "0")) if os.environ.get("API_ID") else 0,
+    api_hash=os.environ.get("API_HASH", ""),
+    bot_token=os.environ.get("BOT_TOKEN", ""),
     in_memory=True,  # THIS FIXES THE SQLITE ERROR ON RAILWAY
     ipv6=False  # Force IPv4 for better Render/Railway compatibility
 )
@@ -218,7 +219,7 @@ def update_download_progress(download_id, filename, user_id, progress=0, status=
 
 def run_web_server():
     """Run Flask server in separate thread for Render compatibility"""
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 5000))
     print(f"🌐 Flask server starting on 0.0.0.0:{port}")
     try:
         web_app.run(host="0.0.0.0", port=port, debug=False, threaded=True, use_reloader=False)
@@ -324,7 +325,7 @@ async def process_video_railway_optimized(video_url, message):
                         current_progress = line.strip()
                         
                         # Update live progress tracking
-                        update_download_progress(download_id, filename, user_id, current_percent, f"Downloading... {current_percent:.1f}%")
+                        update_download_progress(download_id, filename, user_id, int(current_percent), f"Downloading... {current_percent:.1f}%")
                         
                         if time.time() - last_update > 5 and current_progress != last_progress:  # Update every 5 seconds
                             try:
@@ -701,6 +702,29 @@ async def call_ytm_handler(bot: Client, m: Message):
 async def call_getcookies_handler(client: Client, m: Message):
     await getcookies_handler(client, m)
 
+# Ultra-Fast YouTube Download Handler
+@bot.on_message(filters.command(["ultrafast", "uyt"]) & filters.private)
+async def ultra_fast_youtube_handler(bot: Client, m: Message):
+    """Handle ultra-fast YouTube downloads with optimization techniques"""
+    try:
+        # Extract URLs from message
+        links = re.findall(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', m.text)
+        
+        if not links:
+            await m.reply_text("⚠️ **Please provide YouTube URLs!**\n\nExample: `/ultrafast https://youtube.com/watch?v=abc123`")
+            return
+        
+        # Use ultra-fast downloader
+        success_count = await ultra_fast_youtube_download(bot, m, links, globals)
+        
+        if success_count > 0:
+            await m.reply_text(f"🎉 **Ultra-Fast Download Complete!**\n\n✅ Successfully downloaded {success_count}/{len(links)} videos with advanced optimizations!")
+        else:
+            await m.reply_text("❌ **Download failed** - please check the URLs and try again.")
+            
+    except Exception as e:
+        await m.reply_text(f"❌ **Error:** {str(e)}")
+
 @bot.on_message(filters.command(["t2h"]))
 async def call_html_handler(bot: Client, message: Message):
     await html_handler(bot, message)
@@ -809,7 +833,7 @@ if __name__ == "__main__":
     print("🚂 SAINI DRM Bot Starting with Render Port Support...")
     
     # Start web server FIRST for immediate port detection
-    port = int(os.environ.get('PORT', 10000))
+    port = int(os.environ.get('PORT', 5000))
     print(f"🌐 Starting Flask server on port {port} (Render requirement)...")
     web_thread = Thread(target=run_web_server, daemon=True)
     web_thread.start()
