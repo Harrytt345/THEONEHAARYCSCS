@@ -4,10 +4,17 @@ import time
 import mmap
 import datetime
 import aiohttp
-import aiofiles
 import asyncio
 import logging
 import requests
+
+# Optional aiofiles import
+try:
+    import aiofiles
+    AIOFILES_AVAILABLE = True
+except ImportError:
+    AIOFILES_AVAILABLE = False
+    aiofiles = None
 import tgcrypto
 import subprocess
 import concurrent.futures
